@@ -31,11 +31,9 @@ const App: React.FC = () => {
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
   const [pendingParams, setPendingParams] = useState<GenerateVideoParams | null>(null);
 
-  // A single state to hold the initial values for the prompt form
   const [initialFormValues, setInitialFormValues] =
     useState<GenerateVideoParams | null>(null);
 
-  // Check for API key on initial load
   useEffect(() => {
     const checkApiKey = async () => {
       if (window.aistudio) {
@@ -44,10 +42,7 @@ const App: React.FC = () => {
             setShowApiKeyDialog(true);
           }
         } catch (error) {
-          console.warn(
-            'aistudio.hasSelectedApiKey check failed, assuming no key selected.',
-            error,
-          );
+          console.warn('aistudio.hasSelectedApiKey check failed.', error);
           setShowApiKeyDialog(true);
         }
       }
@@ -61,7 +56,6 @@ const App: React.FC = () => {
   };
 
   const handleGenerate = useCallback(async (params: GenerateVideoParams, skipKeyCheck = false) => {
-    // Before generating, check if a key has been selected, unless we just came from the selection dialog
     if (!skipKeyCheck && window.aistudio) {
       try {
         const hasKey = await window.aistudio.hasSelectedApiKey();
@@ -71,7 +65,7 @@ const App: React.FC = () => {
           return;
         }
       } catch (error) {
-        console.warn('Key check failed, proceeding to attempt generation anyway.', error);
+        console.warn('Key check failed, attempting generation anyway.', error);
       }
     }
 
@@ -89,31 +83,25 @@ const App: React.FC = () => {
       setPendingParams(null);
     } catch (error) {
       console.error('Video generation failed:', error);
-      const errorMsg =
-        error instanceof Error ? error.message : 'An unknown error occurred.';
-
+      const errorMsg = error instanceof Error ? error.message : 'An unknown error occurred.';
       let userFriendlyMessage = `Video generation failed: ${errorMsg}`;
       let shouldOpenDialog = false;
 
       if (typeof errorMsg === 'string') {
         const lowerMsg = errorMsg.toLowerCase();
-        // Specifically catch model not found which usually means key/permission issues for Veo
         if (errorMsg.includes('Requested entity was not found.')) {
-          userFriendlyMessage =
-            'Model not found. This can be caused by an invalid API key or permission issues. Please check your API key selection.';
+          userFriendlyMessage = 'Model or entity not found. Please ensure you have selected a valid, paid API key.';
           shouldOpenDialog = true;
-        } 
-        // Catch key-specific errors including the browser safeguard error
-        else if (
+        } else if (
           errorMsg.includes('API_KEY_INVALID') ||
           errorMsg.includes('API key not valid') ||
           errorMsg.includes('API key is missing') ||
           errorMsg.includes('An API Key must be set') ||
           lowerMsg.includes('permission denied') ||
-          lowerMsg.includes('unauthenticated')
+          lowerMsg.includes('unauthenticated') ||
+          lowerMsg.includes('api key')
         ) {
-          userFriendlyMessage =
-            'A valid, paid API key is required to use Veo. Please select a key from a billing-enabled project.';
+          userFriendlyMessage = 'A valid, paid API key is required for Veo. Please select one from the dialog.';
           shouldOpenDialog = true;
         }
       }
@@ -137,12 +125,10 @@ const App: React.FC = () => {
   const handleApiKeyDialogContinue = async () => {
     setShowApiKeyDialog(false);
     if (window.aistudio) {
-      // Open the selection dialog
       await window.aistudio.openSelectKey();
     }
     
     // Mitigate race condition: Proceed immediately assuming selection was successful.
-    // We pass `true` to `skipKeyCheck` because hasSelectedApiKey() might not return true immediately.
     if (pendingParams) {
       handleGenerate(pendingParams, true);
     } else if (appState === AppState.ERROR && lastConfig) {
@@ -197,10 +183,8 @@ const App: React.FC = () => {
         setVideoUrl(null);
         setErrorMessage(null);
       } catch (error) {
-        console.error('Failed to process video for extension:', error);
-        const message =
-          error instanceof Error ? error.message : 'An unknown error occurred.';
-        showStatusError(`Failed to prepare video for extension: ${message}`);
+        console.error('Failed to prepare video extension:', error);
+        showStatusError(`Failed to prepare video for extension.`);
       }
     }
   }, [lastConfig, lastVideoBlob, lastVideoObject]);
@@ -264,14 +248,8 @@ const App: React.FC = () => {
                 canExtend={lastConfig?.resolution === Resolution.P720}
               />
             )}
-            {appState === AppState.SUCCESS &&
-              !videoUrl &&
-              renderError(
-                'Video generated, but the data stream failed. Please try again.',
-              )}
-            {appState === AppState.ERROR &&
-              errorMessage &&
-              renderError(errorMessage)}
+            {appState === AppState.SUCCESS && !videoUrl && renderError('Video generated, but could not be played.')}
+            {appState === AppState.ERROR && errorMessage && renderError(errorMessage)}
           </div>
         )}
       </main>
