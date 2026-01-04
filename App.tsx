@@ -29,6 +29,7 @@ const App: React.FC = () => {
   const [lastVideoObject, setLastVideoObject] = useState<Video | null>(null);
   const [lastVideoBlob, setLastVideoBlob] = useState<Blob | null>(null);
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
+  const [pendingParams, setPendingParams] = useState<GenerateVideoParams | null>(null);
 
   // A single state to hold the initial values for the prompt form
   const [initialFormValues, setInitialFormValues] =
@@ -60,17 +61,17 @@ const App: React.FC = () => {
   };
 
   const handleGenerate = useCallback(async (params: GenerateVideoParams) => {
+    // Before generating, check if a key has been selected
     if (window.aistudio) {
       try {
-        if (!(await window.aistudio.hasSelectedApiKey())) {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        if (!hasKey) {
+          setPendingParams(params);
           setShowApiKeyDialog(true);
           return;
         }
       } catch (error) {
-        console.warn(
-          'aistudio.hasSelectedApiKey check failed, assuming no key selected.',
-          error,
-        );
+        setPendingParams(params);
         setShowApiKeyDialog(true);
         return;
       }
@@ -79,7 +80,6 @@ const App: React.FC = () => {
     setAppState(AppState.LOADING);
     setErrorMessage(null);
     setLastConfig(params);
-    // Reset initial form values for the next fresh start
     setInitialFormValues(null);
 
     try {
@@ -88,6 +88,7 @@ const App: React.FC = () => {
       setLastVideoBlob(blob);
       setLastVideoObject(video);
       setAppState(AppState.SUCCESS);
+      setPendingParams(null);
     } catch (error) {
       console.error('Video generation failed:', error);
       const errorMsg =
@@ -98,13 +99,11 @@ const App: React.FC = () => {
 
       if (typeof errorMsg === 'string') {
         const lowerMsg = errorMsg.toLowerCase();
-        // Specifically catch model not found which usually means key/permission issues for Veo
         if (errorMsg.includes('Requested entity was not found.')) {
           userFriendlyMessage =
             'Model not found. This can be caused by an invalid API key or permission issues. Please check your API key.';
           shouldOpenDialog = true;
         } 
-        // Catch key-specific errors including the browser safeguard error
         else if (
           errorMsg.includes('API_KEY_INVALID') ||
           errorMsg.includes('API key not valid') ||
@@ -123,6 +122,7 @@ const App: React.FC = () => {
       setAppState(AppState.ERROR);
 
       if (shouldOpenDialog) {
+        setPendingParams(params);
         setShowApiKeyDialog(true);
       }
     }
@@ -139,8 +139,11 @@ const App: React.FC = () => {
     if (window.aistudio) {
       await window.aistudio.openSelectKey();
     }
-    // We assume key selection was successful as per guidelines to avoid race condition
-    if (appState === AppState.ERROR && lastConfig) {
+    
+    // Mitigate race condition: Proceed immediately assuming selection was successful
+    if (pendingParams) {
+      handleGenerate(pendingParams);
+    } else if (appState === AppState.ERROR && lastConfig) {
       handleRetry();
     }
   };
@@ -152,7 +155,8 @@ const App: React.FC = () => {
     setLastConfig(null);
     setLastVideoObject(null);
     setLastVideoBlob(null);
-    setInitialFormValues(null); // Clear the form state
+    setInitialFormValues(null);
+    setPendingParams(null);
   }, []);
 
   const handleTryAgainFromError = useCallback(() => {
@@ -161,7 +165,6 @@ const App: React.FC = () => {
       setAppState(AppState.IDLE);
       setErrorMessage(null);
     } else {
-      // Fallback to a fresh start if there's no last config
       handleNewVideo();
     }
   }, [lastConfig, handleNewVideo]);
@@ -175,13 +178,12 @@ const App: React.FC = () => {
         const videoFile: VideoFile = {file, base64: ''};
 
         setInitialFormValues({
-          ...lastConfig, // Carry over model, aspect ratio
+          ...lastConfig,
           mode: GenerationMode.EXTEND_VIDEO,
-          prompt: '', // Start with a blank prompt
-          inputVideo: videoFile, // for preview in the form
-          inputVideoObject: lastVideoObject, // for the API call
-          resolution: Resolution.P720, // Extend requires 720p
-          // Reset other media types
+          prompt: '',
+          inputVideo: videoFile,
+          inputVideoObject: lastVideoObject,
+          resolution: Resolution.P720,
           startFrame: null,
           endFrame: null,
           referenceImages: [],
