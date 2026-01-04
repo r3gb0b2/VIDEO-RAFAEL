@@ -16,9 +16,15 @@ export const generateVideo = async (
 ): Promise<{objectUrl: string; blob: Blob; uri: string; video: Video}> => {
   console.log('Starting video generation with params:', params);
 
-  // Directly initialize the SDK with the environment variable as per guidelines.
-  // The SDK will handle missing keys and throw an appropriate error that App.tsx catches.
-  const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+  const apiKey = process.env.API_KEY;
+  if (!apiKey || apiKey.trim() === "") {
+    // If we reach this point, it means the automatic injection hasn't happened yet or failed.
+    // Throwing a specific error allows the App.tsx catch block to trigger the selection dialog.
+    throw new Error('API key is missing or empty. Please select a valid paid API key.');
+  }
+
+  // Create a fresh instance for every call as required.
+  const ai = new GoogleGenAI({apiKey});
 
   const config: any = {
     numberOfVideos: 1,
@@ -43,12 +49,15 @@ export const generateVideo = async (
     const pPercent = params.promoPercent || 94;
     
     // Construct a specific professional prompt for motion graphics enhancement
-    finalPrompt = `Motion graphic promo video based on the provided poster. 
-    In the blue empty area at the bottom, animate a bold, high-contrast blinking text that says "${pText}". 
-    Below it, add the subtitle "${pPrice}". 
-    Below that, animate a sleek, modern glowing loading progress bar filled to exactly ${pPercent}%, with the text "ESGOTANDO UM LOADING ${pPercent}%" next to it. 
-    The style should be vibrant, professional, and matching the colors (orange, white, blue) of the base image. 
-    Make the text blinking effect high-energy. ${params.prompt ? " Additional details: " + params.prompt : ""}`;
+    // Adhering to the user's request for specific content and style
+    finalPrompt = `Cinematic social media promo video. 
+    Use the provided poster as the background and visual base. 
+    In the blue empty area at the bottom, add a high-impact, bold blinking text that says "${pText}". 
+    Directly below it, add the team name "${pPrice}". 
+    Below the text, animate a glowing, high-tech loading bar that is exactly ${pPercent}% full. 
+    Next to the loading bar, add the text "ESGOTANDO UM LOADING ${pPercent}%". 
+    The style should be energetic, matching the summer/concert theme with vibrant glows and smooth motion. 
+    Ensure the main promotional text pulses with a "Buy Now" urgency. ${params.prompt ? " Additional user instructions: " + params.prompt : ""}`;
 
     if (params.startFrame) {
         generateVideoPayload.image = {
@@ -122,7 +131,7 @@ export const generateVideo = async (
     const url = decodeURIComponent(videoObject.uri);
     
     // Always append the API key when fetching result assets
-    const res = await fetch(`${url}&key=${process.env.API_KEY}`);
+    const res = await fetch(`${url}&key=${apiKey}`);
     if (!res.ok) throw new Error(`Failed to fetch video: ${res.status}`);
 
     const videoBlob = await res.blob();

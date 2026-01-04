@@ -60,9 +60,9 @@ const App: React.FC = () => {
     setAppState(AppState.ERROR);
   };
 
-  const handleGenerate = useCallback(async (params: GenerateVideoParams) => {
-    // Before generating, check if a key has been selected
-    if (window.aistudio) {
+  const handleGenerate = useCallback(async (params: GenerateVideoParams, skipKeyCheck = false) => {
+    // Before generating, check if a key has been selected, unless we just came from the selection dialog
+    if (!skipKeyCheck && window.aistudio) {
       try {
         const hasKey = await window.aistudio.hasSelectedApiKey();
         if (!hasKey) {
@@ -71,9 +71,7 @@ const App: React.FC = () => {
           return;
         }
       } catch (error) {
-        setPendingParams(params);
-        setShowApiKeyDialog(true);
-        return;
+        console.warn('Key check failed, proceeding to attempt generation anyway.', error);
       }
     }
 
@@ -99,11 +97,13 @@ const App: React.FC = () => {
 
       if (typeof errorMsg === 'string') {
         const lowerMsg = errorMsg.toLowerCase();
+        // Specifically catch model not found which usually means key/permission issues for Veo
         if (errorMsg.includes('Requested entity was not found.')) {
           userFriendlyMessage =
-            'Model not found. This can be caused by an invalid API key or permission issues. Please check your API key.';
+            'Model not found. This can be caused by an invalid API key or permission issues. Please check your API key selection.';
           shouldOpenDialog = true;
         } 
+        // Catch key-specific errors including the browser safeguard error
         else if (
           errorMsg.includes('API_KEY_INVALID') ||
           errorMsg.includes('API key not valid') ||
@@ -113,7 +113,7 @@ const App: React.FC = () => {
           lowerMsg.includes('unauthenticated')
         ) {
           userFriendlyMessage =
-            'A valid, paid API key is required to use Veo. Please select one from the dialog.';
+            'A valid, paid API key is required to use Veo. Please select a key from a billing-enabled project.';
           shouldOpenDialog = true;
         }
       }
@@ -137,14 +137,16 @@ const App: React.FC = () => {
   const handleApiKeyDialogContinue = async () => {
     setShowApiKeyDialog(false);
     if (window.aistudio) {
+      // Open the selection dialog
       await window.aistudio.openSelectKey();
     }
     
-    // Mitigate race condition: Proceed immediately assuming selection was successful
+    // Mitigate race condition: Proceed immediately assuming selection was successful.
+    // We pass `true` to `skipKeyCheck` because hasSelectedApiKey() might not return true immediately.
     if (pendingParams) {
-      handleGenerate(pendingParams);
+      handleGenerate(pendingParams, true);
     } else if (appState === AppState.ERROR && lastConfig) {
-      handleRetry();
+      handleGenerate(lastConfig, true);
     }
   };
 
