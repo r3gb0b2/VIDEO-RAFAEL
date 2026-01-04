@@ -16,7 +16,13 @@ export const generateVideo = async (
 ): Promise<{objectUrl: string; blob: Blob; uri: string; video: Video}> => {
   console.log('Starting video generation with params:', params);
 
-  const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error('API key is missing. Please select a paid API key from the dialog.');
+  }
+
+  // Create a fresh instance for every call as required by Veo studio guidelines
+  const ai = new GoogleGenAI({apiKey});
 
   const config: any = {
     numberOfVideos: 1,
@@ -119,7 +125,8 @@ export const generateVideo = async (
     const videoObject = firstVideo.video;
     const url = decodeURIComponent(videoObject.uri);
     
-    const res = await fetch(`${url}&key=${process.env.API_KEY}`);
+    // Use the same API key for downloading the video result
+    const res = await fetch(`${url}&key=${apiKey}`);
     if (!res.ok) throw new Error(`Failed to fetch video: ${res.status}`);
 
     const videoBlob = await res.blob();

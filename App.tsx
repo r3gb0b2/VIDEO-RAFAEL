@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -89,24 +90,31 @@ const App: React.FC = () => {
       setAppState(AppState.SUCCESS);
     } catch (error) {
       console.error('Video generation failed:', error);
-      const errorMessage =
+      const errorMsg =
         error instanceof Error ? error.message : 'An unknown error occurred.';
 
-      let userFriendlyMessage = `Video generation failed: ${errorMessage}`;
+      let userFriendlyMessage = `Video generation failed: ${errorMsg}`;
       let shouldOpenDialog = false;
 
-      if (typeof errorMessage === 'string') {
-        if (errorMessage.includes('Requested entity was not found.')) {
+      if (typeof errorMsg === 'string') {
+        const lowerMsg = errorMsg.toLowerCase();
+        // Specifically catch model not found which usually means key/permission issues for Veo
+        if (errorMsg.includes('Requested entity was not found.')) {
           userFriendlyMessage =
             'Model not found. This can be caused by an invalid API key or permission issues. Please check your API key.';
           shouldOpenDialog = true;
-        } else if (
-          errorMessage.includes('API_KEY_INVALID') ||
-          errorMessage.includes('API key not valid') ||
-          errorMessage.toLowerCase().includes('permission denied')
+        } 
+        // Catch key-specific errors including the browser safeguard error
+        else if (
+          errorMsg.includes('API_KEY_INVALID') ||
+          errorMsg.includes('API key not valid') ||
+          errorMsg.includes('API key is missing') ||
+          errorMsg.includes('An API Key must be set') ||
+          lowerMsg.includes('permission denied') ||
+          lowerMsg.includes('unauthenticated')
         ) {
           userFriendlyMessage =
-            'Your API key is invalid or lacks permissions. Please select a valid, billing-enabled API key.';
+            'A valid, paid API key is required to use Veo. Please select one from the dialog.';
           shouldOpenDialog = true;
         }
       }
@@ -131,6 +139,7 @@ const App: React.FC = () => {
     if (window.aistudio) {
       await window.aistudio.openSelectKey();
     }
+    // We assume key selection was successful as per guidelines to avoid race condition
     if (appState === AppState.ERROR && lastConfig) {
       handleRetry();
     }
@@ -193,14 +202,21 @@ const App: React.FC = () => {
   }, [lastConfig, lastVideoBlob, lastVideoObject]);
 
   const renderError = (message: string) => (
-    <div className="text-center bg-red-900/20 border border-red-500 p-8 rounded-lg">
-      <h2 className="text-2xl font-bold text-red-400 mb-4">Error</h2>
-      <p className="text-red-300">{message}</p>
-      <button
-        onClick={handleTryAgainFromError}
-        className="mt-6 px-6 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
-        Try Again
-      </button>
+    <div className="text-center bg-red-900/20 border border-red-500 p-8 rounded-lg max-w-lg shadow-xl backdrop-blur-sm">
+      <h2 className="text-2xl font-bold text-red-400 mb-4">Generation Error</h2>
+      <p className="text-red-300 mb-8 leading-relaxed">{message}</p>
+      <div className="flex flex-col sm:flex-row gap-4 justify-center">
+        <button
+          onClick={handleTryAgainFromError}
+          className="px-6 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors font-medium">
+          Adjust Settings
+        </button>
+        <button
+          onClick={() => setShowApiKeyDialog(true)}
+          className="px-6 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors font-medium">
+          Switch API Key
+        </button>
+      </div>
     </div>
   );
 
@@ -214,15 +230,15 @@ const App: React.FC = () => {
           Veo Studio
         </h1>
       </header>
-      <main className="w-full max-w-4xl mx-auto flex-grow flex flex-col p-4">
+      <main className="w-full max-w-4xl mx-auto flex-grow flex flex-col p-4 relative">
         {appState === AppState.IDLE ? (
           <>
             <div className="flex-grow flex items-center justify-center">
               <div className="relative text-center">
-                <h2 className="text-3xl text-gray-600">
+                <h2 className="text-3xl text-gray-600 font-light">
                   Type in the prompt box to start
                 </h2>
-                <CurvedArrowDownIcon className="absolute top-full left-1/2 -translate-x-1/2 mt-4 w-24 h-24 text-gray-700 opacity-60" />
+                <CurvedArrowDownIcon className="absolute top-full left-1/2 -translate-x-1/2 mt-4 w-24 h-24 text-gray-700 opacity-60 animate-bounce" />
               </div>
             </div>
             <div className="pb-4">
@@ -233,7 +249,7 @@ const App: React.FC = () => {
             </div>
           </>
         ) : (
-          <div className="flex-grow flex items-center justify-center">
+          <div className="flex-grow flex items-center justify-center overflow-y-auto px-4">
             {appState === AppState.LOADING && <LoadingIndicator />}
             {appState === AppState.SUCCESS && videoUrl && (
               <VideoResult
@@ -247,7 +263,7 @@ const App: React.FC = () => {
             {appState === AppState.SUCCESS &&
               !videoUrl &&
               renderError(
-                'Video generated, but URL is missing. Please try again.',
+                'Video generated, but the data stream failed. Please try again.',
               )}
             {appState === AppState.ERROR &&
               errorMessage &&
