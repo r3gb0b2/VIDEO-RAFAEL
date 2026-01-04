@@ -56,6 +56,7 @@ const App: React.FC = () => {
   };
 
   const handleGenerate = useCallback(async (params: GenerateVideoParams, skipKeyCheck = false) => {
+    // Before generating, check if a key has been selected, unless we just came from the selection dialog
     if (!skipKeyCheck && window.aistudio) {
       try {
         const hasKey = await window.aistudio.hasSelectedApiKey();
@@ -87,23 +88,30 @@ const App: React.FC = () => {
       let userFriendlyMessage = `Video generation failed: ${errorMsg}`;
       let shouldOpenDialog = false;
 
-      if (typeof errorMsg === 'string') {
-        const lowerMsg = errorMsg.toLowerCase();
-        if (errorMsg.includes('Requested entity was not found.')) {
-          userFriendlyMessage = 'Model or entity not found. Please ensure you have selected a valid, paid API key.';
-          shouldOpenDialog = true;
-        } else if (
-          errorMsg.includes('API_KEY_INVALID') ||
-          errorMsg.includes('API key not valid') ||
-          errorMsg.includes('API key is missing') ||
-          errorMsg.includes('An API Key must be set') ||
-          lowerMsg.includes('permission denied') ||
-          lowerMsg.includes('unauthenticated') ||
-          lowerMsg.includes('api key')
-        ) {
-          userFriendlyMessage = 'A valid, paid API key is required for Veo. Please select one from the dialog.';
-          shouldOpenDialog = true;
+      // Handle the specific "An API Key must be set" error which happens in browsers
+      // when the process.env.API_KEY is falsy during SDK initialization.
+      if (errorMsg.includes('An API Key must be set') || errorMsg.includes('API key is missing')) {
+        if (skipKeyCheck) {
+          // If we were trying to auto-generate after a key selection and it failed,
+          // it's likely the race condition. Instead of showing an error, 
+          // we silently return to IDLE so the user can just click "Generate" again.
+          setAppState(AppState.IDLE);
+          setInitialFormValues(params);
+          return;
         }
+        userFriendlyMessage = 'API Key missing. Please select a valid paid API key.';
+        shouldOpenDialog = true;
+      } else if (errorMsg.includes('Requested entity was not found.')) {
+        userFriendlyMessage = 'Model or entity not found. Please ensure you have selected a valid, paid API key.';
+        shouldOpenDialog = true;
+      } else if (
+        errorMsg.includes('API_KEY_INVALID') ||
+        errorMsg.includes('API key not valid') ||
+        errorMsg.toLowerCase().includes('permission denied') ||
+        errorMsg.toLowerCase().includes('unauthenticated')
+      ) {
+        userFriendlyMessage = 'A valid, paid API key is required for Veo. Please select one from the dialog.';
+        shouldOpenDialog = true;
       }
 
       setErrorMessage(userFriendlyMessage);
@@ -129,10 +137,14 @@ const App: React.FC = () => {
     }
     
     // Mitigate race condition: Proceed immediately assuming selection was successful.
+    // We attempt generation but handle the "missing key" error gracefully in handleGenerate.
     if (pendingParams) {
       handleGenerate(pendingParams, true);
     } else if (appState === AppState.ERROR && lastConfig) {
       handleGenerate(lastConfig, true);
+    } else {
+      // Just return to the app interface
+      setAppState(AppState.IDLE);
     }
   };
 
